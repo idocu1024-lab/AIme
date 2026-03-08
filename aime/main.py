@@ -34,12 +34,13 @@ async def _run_daily_cycle():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Ensure data directories exist BEFORE DB init
+    os.makedirs("data", exist_ok=True)
+    os.makedirs(settings.chroma_persist_dir, exist_ok=True)
+
     # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    # Ensure data directories exist
-    os.makedirs("data", exist_ok=True)
-    os.makedirs(settings.chroma_persist_dir, exist_ok=True)
 
     # Start scheduler
     scheduler = AsyncIOScheduler()
