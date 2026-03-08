@@ -1,0 +1,51 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    app_name: str = "AI.me"
+    debug: bool = False
+
+    # Database
+    database_url: str = "sqlite+aiosqlite:///./data/aime.db"
+
+    # ChromaDB
+    chroma_persist_dir: str = "./data/chroma"
+
+    # LLM Provider: "openai" or "anthropic"
+    llm_provider: str = "openai"
+
+    # OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5-nano"
+    openai_base_url: str = ""  # Leave empty for default, or set for proxy
+
+    # Anthropic
+    anthropic_api_key: str = ""
+    claude_model: str = "claude-sonnet-4-20250514"
+
+    # LLM limits (reasoning models need higher budgets for internal reasoning)
+    max_tokens_dialogue: int = 8000
+    max_tokens_fusion: int = 8000
+    max_tokens_social: int = 16000
+    max_tokens_daily_log: int = 8000
+
+    # Game
+    daily_cycle_hour_utc: int = 0
+    social_matching_hours_utc: str = "8,20"
+    max_feed_length: int = 50000
+    max_feeds_per_day: int = 10
+    fusion_quant_weight: float = 0.4
+    fusion_semantic_weight: float = 0.6
+
+    # Admin
+    admin_key: str = "aime-admin-2024"
+
+    # Auth
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440
+
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+
+settings = Settings()

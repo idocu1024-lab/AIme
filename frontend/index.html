@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI.me · 念体修炼</title>
+    <link rel="stylesheet" href="/css/terminal.css">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="screen">
+        <div class="auth-container">
+            <pre class="ascii-art">
+╔══════════════════════════════════════════════════╗
+║                                                  ║
+║     █████╗ ██╗   ███╗   ███╗███████╗            ║
+║    ██╔══██╗██║   ████╗ ████║██╔════╝            ║
+║    ███████║██║   ██╔████╔██║█████╗              ║
+║    ██╔══██║██║   ██║╚██╔╝██║██╔══╝              ║
+║    ██║  ██║██║██╗██║ ╚═╝ ██║███████╗            ║
+║    ╚═╝  ╚═╝╚═╝╚═╝╚═╝     ╚═╝╚══════╝            ║
+║                                                  ║
+║        念 体 修 炼 · AI Cultivation World        ║
+║                                                  ║
+╚══════════════════════════════════════════════════╝
+            </pre>
+            <div class="auth-form" id="login-form">
+                <div class="form-group">
+                    <label>用户名 / Username</label>
+                    <input type="text" id="login-username" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>密码 / Password</label>
+                    <input type="password" id="login-password" autocomplete="current-password">
+                </div>
+                <div class="form-actions">
+                    <button onclick="doLogin()" class="btn-primary">登入 Login</button>
+                    <button onclick="showRegister()" class="btn-secondary">注册 Register</button>
+                </div>
+                <div id="login-error" class="error-text"></div>
+            </div>
+            <div class="auth-form hidden" id="register-form">
+                <div class="form-group">
+                    <label>用户名 / Username</label>
+                    <input type="text" id="reg-username" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label>显示名 / Display Name</label>
+                    <input type="text" id="reg-display">
+                </div>
+                <div class="form-group">
+                    <label>密码 / Password</label>
+                    <input type="password" id="reg-password" autocomplete="new-password">
+                </div>
+                <div class="form-actions">
+                    <button onclick="doRegister()" class="btn-primary">注册 Register</button>
+                    <button onclick="showLogin()" class="btn-secondary">返回登录</button>
+                </div>
+                <div id="reg-error" class="error-text"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Entity Creation Screen -->
+    <div id="entity-screen" class="screen hidden">
+        <div class="auth-container">
+            <h2 class="section-title">创建你的念体 · Create Your Soul Entity</h2>
+            <div class="auth-form">
+                <div class="form-group">
+                    <label>念体名号 / Entity Name</label>
+                    <input type="text" id="entity-name" placeholder="给你的念体起一个名字">
+                </div>
+                <div class="form-group">
+                    <label>本心 / Core Belief</label>
+                    <textarea id="entity-belief" rows="4" placeholder="用一段话描述你是谁、相信什么、怎么看世界。这将成为念体的灵魂。"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>修炼意图 / Intent</label>
+                    <textarea id="entity-intent" rows="2" placeholder="你希望念体去探索什么方向？"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>初始投喂 / First Feed</label>
+                    <textarea id="entity-feed" rows="4" placeholder="传递第一批知识给你的念体。可以是文章、想法、知识片段..."></textarea>
+                </div>
+                <div class="form-actions">
+                    <button onclick="createEntity()" class="btn-primary">化念成体 · Create</button>
+                </div>
+                <div id="entity-error" class="error-text"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal Screen -->
+    <div id="terminal-screen" class="screen hidden">
+        <div id="terminal-output"></div>
+        <div id="terminal-input-line">
+            <span class="prompt">⟩ </span>
+            <input type="text" id="terminal-input" autocomplete="off" autofocus
+                   placeholder="输入命令... (帮助/help)">
+        </div>
+    </div>
+
+    <script src="/js/main.js"></script>
+</body>
+</html>

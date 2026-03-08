@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI.me Admin Dashboard</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0a0a0a; color:#c0c0c0; font-family:'Courier New',monospace; font-size:14px; }
+.header { background:#111; border-bottom:1px solid #333; padding:12px 24px; display:flex; justify-content:space-between; align-items:center; }
+.header h1 { color:#00ff88; font-size:18px; }
+.header .actions { display:flex; gap:12px; align-items:center; }
+.btn { background:#1a3a2a; color:#00ff88; border:1px solid #00ff88; padding:6px 16px; cursor:pointer; font-family:inherit; font-size:13px; }
+.btn:hover { background:#00ff88; color:#000; }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-danger { border-color:#ff4444; color:#ff4444; background:#3a1a1a; }
+.btn-danger:hover { background:#ff4444; color:#000; }
+.stats-bar { display:flex; gap:24px; padding:16px 24px; background:#0d0d0d; border-bottom:1px solid #222; }
+.stat { text-align:center; }
+.stat .val { font-size:28px; color:#00ff88; font-weight:bold; }
+.stat .label { color:#666; font-size:12px; margin-top:4px; }
+.container { padding:16px 24px; }
+table { width:100%; border-collapse:collapse; }
+th { text-align:left; color:#00ff88; border-bottom:1px solid #333; padding:8px; font-size:12px; text-transform:uppercase; }
+td { padding:8px; border-bottom:1px solid #1a1a1a; }
+tr:hover { background:#111; }
+tr.npc { color:#888; }
+.fusion-bar { display:inline-block; width:80px; height:10px; background:#1a1a1a; border:1px solid #333; position:relative; vertical-align:middle; }
+.fusion-fill { height:100%; background:#00ff88; }
+.clickable { cursor:pointer; color:#00ccff; text-decoration:underline; }
+.clickable:hover { color:#00ffff; }
+#detail-panel { display:none; position:fixed; top:0; right:0; width:50%; height:100vh; background:#0d0d0d; border-left:2px solid #00ff88; overflow-y:auto; z-index:100; padding:20px; }
+#detail-panel .close { position:absolute; top:12px; right:16px; cursor:pointer; color:#ff4444; font-size:18px; }
+.detail-section { margin-bottom:20px; }
+.detail-section h3 { color:#00ff88; margin-bottom:8px; border-bottom:1px solid #333; padding-bottom:4px; }
+.fusion-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.fusion-item { background:#111; padding:8px; border:1px solid #222; }
+.fusion-item .dim-name { color:#888; font-size:12px; }
+.fusion-item .dim-val { color:#00ff88; font-size:20px; font-weight:bold; }
+.dim-bar { width:100%; height:6px; background:#1a1a1a; margin-top:4px; }
+.dim-bar-fill { height:100%; background:#00ff88; }
+.log-entry { background:#111; border:1px solid #222; padding:10px; margin-bottom:8px; }
+.log-entry .log-day { color:#00ff88; font-weight:bold; }
+.log-entry .log-text { color:#aaa; margin-top:4px; white-space:pre-wrap; }
+.social-item { padding:6px 0; border-bottom:1px solid #1a1a1a; }
+.social-item .s-type { color:#ffaa00; }
+.social-item .s-opp { color:#00ccff; }
+.toast { position:fixed; top:20px; left:50%; transform:translateX(-50%); background:#00ff88; color:#000; padding:8px 24px; z-index:200; display:none; font-weight:bold; }
+#login-screen { display:flex; justify-content:center; align-items:center; height:100vh; }
+#login-screen .box { background:#111; border:1px solid #333; padding:32px; text-align:center; }
+#login-screen input { background:#0a0a0a; color:#00ff88; border:1px solid #333; padding:8px 12px; font-family:inherit; margin:12px 0; width:200px; text-align:center; }
+#main-screen { display:none; }
+.auto-refresh { color:#666; font-size:12px; }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="box">
+    <h2 style="color:#00ff88;margin-bottom:16px;">AI.me Admin</h2>
+    <div><input type="password" id="admin-key" placeholder="管理员密钥"></div>
+    <div><button class="btn" onclick="tryLogin()">进入</button></div>
+    <div id="login-err" style="color:#ff4444;margin-top:8px;"></div>
+  </div>
+</div>
+
+<div id="main-screen">
+  <div class="header">
+    <h1>AI.me 管理后台</h1>
+    <div class="actions">
+      <span class="auto-refresh" id="refresh-timer">30s 自动刷新</span>
+      <button class="btn" onclick="loadDashboard()">刷新</button>
+      <button class="btn btn-danger" id="cycle-btn" onclick="runCycle()">运行每日结算</button>
+    </div>
+  </div>
+
+  <div class="stats-bar" id="stats-bar"></div>
+
+  <div class="container">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>念体</th>
+          <th>玩家</th>
+          <th>修炼天</th>
+          <th>聚变度</th>
+          <th>魂念力</th>
+          <th>投喂</th>
+          <th>对话</th>
+          <th>社交</th>
+          <th>方向</th>
+        </tr>
+      </thead>
+      <tbody id="entity-table"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="detail-panel">
+  <span class="close" onclick="closeDetail()">[X]</span>
+  <div id="detail-content"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = window.location.origin;
+let adminKey = '';
+let refreshInterval = null;
+
+function tryLogin() {
+  adminKey = document.getElementById('admin-key').value.trim();
+  if (!adminKey) return;
+  fetch(`${API}/api/admin/dashboard?key=${encodeURIComponent(adminKey)}`)
+    .then(r => { if (!r.ok) throw new Error('密钥错误'); return r.json(); })
+    .then(data => {
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('main-screen').style.display = 'block';
+      renderDashboard(data);
+      refreshInterval = setInterval(loadDashboard, 30000);
+    })
+    .catch(e => { document.getElementById('login-err').textContent = e.message; });
+}
+
+document.getElementById('admin-key').addEventListener('keydown', e => {
+  if (e.key === 'Enter') tryLogin();
+});
+
+function loadDashboard() {
+  fetch(`${API}/api/admin/dashboard?key=${encodeURIComponent(adminKey)}`)
+    .then(r => r.json())
+    .then(renderDashboard)
+    .catch(e => showToast('加载失败: ' + e.message));
+}
+
+function renderDashboard(data) {
+  const s = data.stats;
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat"><div class="val">${s.entity_count}</div><div class="label">总念体</div></div>
+    <div class="stat"><div class="val">${s.player_count}</div><div class="label">总玩家</div></div>
+    <div class="stat"><div class="val">${s.npc_count}</div><div class="label">NPC</div></div>
+    <div class="stat"><div class="val">${s.entity_count - s.npc_count}</div><div class="label">玩家念体</div></div>
+  `;
+
+  const tbody = document.getElementById('entity-table');
+  tbody.innerHTML = data.entities.map((e, i) => {
+    const fusionPct = Math.round(e.fusion.total * 100);
+    return `<tr class="${e.is_npc ? 'npc' : ''}">
+      <td>${i + 1}</td>
+      <td><span class="clickable" onclick="showDetail('${e.id}')">${e.name}</span>${e.is_npc ? ' <span style="color:#666">[NPC]</span>' : ''}</td>
+      <td>${e.player_name || '-'}</td>
+      <td>${e.cultivation_day}</td>
+      <td>
+        ${e.fusion.total.toFixed(3)}
+        <div class="fusion-bar"><div class="fusion-fill" style="width:${fusionPct}%"></div></div>
+      </td>
+      <td>${e.soul_force}</td>
+      <td>${e.total_feeds}</td>
+      <td>${e.total_dialogues}</td>
+      <td>${e.social_count}</td>
+      <td style="color:#888">${e.direction || '自由探索'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function showDetail(entityId) {
+  fetch(`${API}/api/admin/entity/${entityId}?key=${encodeURIComponent(adminKey)}`)
+    .then(r => r.json())
+    .then(renderDetail)
+    .catch(e => showToast('加载失败'));
+}
+
+function renderDetail(data) {
+  const e = data.entity;
+  const f = e.fusion;
+  const panel = document.getElementById('detail-panel');
+  const dims = [
+    { name: '认知对齐', key: 'alignment', val: f.alignment },
+    { name: '认知深度', key: 'depth', val: f.depth },
+    { name: '知行一致', key: 'coherence', val: f.coherence },
+    { name: '自洽度', key: 'integrity', val: f.integrity },
+  ];
+
+  let html = `
+    <h2 style="color:#00ff88;margin-bottom:4px;">${e.name}</h2>
+    <div style="color:#666;margin-bottom:16px;">${e.is_npc ? 'NPC' : '玩家念体'} · 第 ${e.cultivation_day} 天</div>
+
+    <div class="detail-section">
+      <h3>本心</h3>
+      <div style="color:#aaa">${e.core_belief}</div>
+    </div>
+
+    <div class="detail-section">
+      <h3>聚变度 ${f.total.toFixed(3)} · 魂念力 ${e.soul_force}</h3>
+      <div class="fusion-grid">
+        ${dims.map(d => `<div class="fusion-item">
+          <div class="dim-name">${d.name}</div>
+          <div class="dim-val">${d.val.toFixed(3)}</div>
+          <div class="dim-bar"><div class="dim-bar-fill" style="width:${Math.round(d.val*100)}%"></div></div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+
+  // Fusion history chart (text-based)
+  if (data.fusion_history.length > 0) {
+    html += `<div class="detail-section"><h3>聚变趋势</h3><div style="font-size:12px;">`;
+    const maxDay = Math.max(...data.fusion_history.map(h => h.day));
+    for (const h of data.fusion_history) {
+      const bar = '█'.repeat(Math.round(h.total * 40));
+      html += `<div>Day ${String(h.day).padStart(3)} │${bar} ${h.total.toFixed(3)}</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // Social events
+  if (data.social_events.length > 0) {
+    html += `<div class="detail-section"><h3>社交记录 (${data.social_events.length})</h3>`;
+    for (const s of data.social_events) {
+      const typeLabel = s.type === 'lun_dao' ? '论道' : '切磋';
+      const winner = s.outcome?.winner;
+      const resultStr = s.type === 'qie_cuo' && winner
+        ? (winner === e.name ? ' <span style="color:#00ff88">胜</span>' : ' <span style="color:#ff4444">负</span>')
+        : '';
+      html += `<div class="social-item">
+        <span class="s-type">[${typeLabel}]</span>
+        vs <span class="s-opp">${s.opponent}</span>${resultStr}
+        <span style="color:#666">· ${s.topic || '未知'} · Day ${s.day}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Daily logs
+  if (data.daily_logs.length > 0) {
+    html += `<div class="detail-section"><h3>修炼日志</h3>`;
+    for (const l of data.daily_logs) {
+      html += `<div class="log-entry">
+        <div class="log-day">第 ${l.day} 天 (投喂${l.feeds} 社交${l.social})</div>
+        <div class="log-text">${l.content}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  document.getElementById('detail-content').innerHTML = html;
+  panel.style.display = 'block';
+}
+
+function closeDetail() {
+  document.getElementById('detail-panel').style.display = 'none';
+}
+
+function runCycle() {
+  const btn = document.getElementById('cycle-btn');
+  btn.disabled = true;
+  btn.textContent = '结算中...';
+  fetch(`${API}/api/admin/cycle/run?key=${encodeURIComponent(adminKey)}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      showToast(data.message);
+      btn.disabled = false;
+      btn.textContent = '运行每日结算';
+      loadDashboard();
+    })
+    .catch(e => {
+      showToast('结算失败: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '运行每日结算';
+    });
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+</script>
+</body>
+</html>
