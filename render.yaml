@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: aime
+    runtime: python
+    buildCommand: pip install -e .
+    startCommand: uvicorn aime.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.0"
+      - key: LLM_PROVIDER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_URL
+        value: "sqlite+aiosqlite:///./data/aime.db"
+      - key: CHROMA_PERSIST_DIR
+        value: "./data/chroma"
+      - key: DEBUG
+        value: "false"
