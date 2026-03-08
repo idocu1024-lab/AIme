@@ -6,6 +6,25 @@ let commandHistory = [];
 let historyIndex = -1;
 let streamBuffer = '';
 
+// Extract readable error message from API response
+function extractError(data, fallback) {
+    if (!data) return fallback;
+    if (typeof data.detail === 'string') return data.detail;
+    if (Array.isArray(data.detail)) {
+        // FastAPI 422 validation errors
+        return data.detail.map(e => {
+            const field = e.loc && e.loc.length > 1 ? e.loc[e.loc.length - 1] : '';
+            const fieldMap = { username: '用户名', password: '密码', display_name: '显示名' };
+            const name = fieldMap[field] || field;
+            if (e.type === 'string_too_short') return `${name}至少需要${e.ctx?.min_length || ''}个字符`;
+            if (e.type === 'string_too_long') return `${name}最多${e.ctx?.max_length || ''}个字符`;
+            if (e.type === 'missing') return `请填写${name}`;
+            return e.msg || '输入有误';
+        }).join('；');
+    }
+    return fallback;
+}
+
 // ===== Auth =====
 
 function showRegister() {
@@ -37,7 +56,7 @@ async function doLogin() {
         });
         const data = await res.json();
         if (!res.ok) {
-            errEl.textContent = data.detail || '登录失败';
+            errEl.textContent = extractError(data, '登录失败');
             return;
         }
         token = data.access_token;
@@ -68,7 +87,7 @@ async function doRegister() {
         });
         const data = await res.json();
         if (!res.ok) {
-            errEl.textContent = data.detail || '注册失败';
+            errEl.textContent = extractError(data, '注册失败');
             return;
         }
         token = data.access_token;
@@ -129,7 +148,7 @@ async function createEntity() {
         });
         const data = await res.json();
         if (!res.ok) {
-            errEl.textContent = data.detail || '创建失败';
+            errEl.textContent = extractError(data, '创建失败');
             return;
         }
         showTerminal();
