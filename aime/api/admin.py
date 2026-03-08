@@ -211,3 +211,62 @@ async def run_cycle(key: str = Query(...)):
     async with async_session() as db:
         count = await cycle.run_all(db)
     return {"message": f"每日结算完成，处理 {count} 个念体", "count": count}
+
+
+@router.post("/seed-npcs")
+async def seed_npcs(key: str = Query(...)):
+    """Seed NPC entities into the database."""
+    _check_key(key)
+    from aime.core.npc_seeds import NPC_SEEDS
+    from aime.utils.id_gen import gen_short_id
+
+    memory = MemoryLayer(get_chroma())
+    created = []
+    skipped = []
+
+    async with async_session() as db:
+        for npc in NPC_SEEDS:
+            result = await db.execute(
+                select(Entity).where(Entity.name == npc["name"])
+            )
+            if result.scalar_one_or_none():
+                skipped.append(npc["name"])
+                continue
+
+            entity = Entity(
+                name=npc["name"],
+                core_belief=npc["core_belief"],
+                intent=npc["intent"],
+                is_npc=True,
+            )
+            db.add(entity)
+            await db.flush()
+
+            for i, feed_text in enumerate(npc.get("feeds", [])):
+                feed = Feed(
+                    entity_id=entity.id,
+                    raw_text=feed_text,
+                    source_label=f"NPC初始化-{i+1}",
+                )
+                db.add(feed)
+                await db.flush()
+
+                chunk_count = memory.ingest(
+                    entity_id=entity.id,
+                    feed_id=feed.id,
+                    text=feed_text,
+                    source_label=f"NPC初始化-{i+1}",
+                )
+                feed.chunk_count = chunk_count
+                feed.processed = True
+                entity.total_feeds += 1
+
+            created.append(npc["name"])
+
+        await db.commit()
+
+    return {
+        "message": f"创建 {len(created)} 个NPC，跳过 {len(skipped)} 个",
+        "created": created,
+        "skipped": skipped,
+    }
