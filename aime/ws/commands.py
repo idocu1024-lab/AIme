@@ -52,4 +52,8 @@ def parse_command(raw: str) -> tuple[str, str]:
             args = raw[len(cmd):].strip()
             return (COMMAND_MAP[cmd], args)
 
+    # Default: non-slash input treated as dialogue
+    if not raw.startswith("/"):
+        return ("dialogue", raw)
+
     return ("unknown", raw)
