@@ -225,24 +225,28 @@ function handleMessage(msg) {
     const type = msg.type;
     const content = msg.content;
 
-    // Hide waiting bar on first response
-    hideWaitingBar();
-
     if (type === 'entity_speech' && msg.streaming) {
         if (msg.done) {
             // Streaming complete — remove stream element and append final
+            hideWaitingBar();
             const streamEl = document.getElementById('stream-line');
             if (streamEl) streamEl.remove();
             if (streamBuffer) {
                 appendOutput('entity', streamBuffer);
                 streamBuffer = '';
             }
-        } else {
+        } else if (content) {
+            // First real content — replace waiting bar with streaming display
+            hideWaitingBar();
             streamBuffer += content;
             updateStreamDisplay(streamBuffer);
         }
+        // Ignore empty streaming init messages — keep waiting bar visible
         return;
     }
+
+    // Non-streaming message — hide waiting bar
+    hideWaitingBar();
 
     const styleMap = {
         'system': 'system',
