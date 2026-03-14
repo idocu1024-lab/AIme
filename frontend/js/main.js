@@ -290,17 +290,33 @@ function showWaitingBar() {
     const container = document.createElement('div');
     container.id = 'waiting-indicator';
 
-    const label = document.createElement('div');
-    label.className = 'waiting-label';
-    label.textContent = '念 体 思 考 中 ···';
+    // Top row: spinner + label + animated dots
+    const topRow = document.createElement('div');
+    topRow.className = 'waiting-top-row';
 
+    const spinner = document.createElement('span');
+    spinner.className = 'waiting-spinner';
+    spinner.textContent = '☯';
+
+    const label = document.createElement('span');
+    label.className = 'waiting-label';
+    label.textContent = '念 体 思 考 中';
+
+    const dots = document.createElement('span');
+    dots.className = 'waiting-dots';
+
+    topRow.appendChild(spinner);
+    topRow.appendChild(label);
+    topRow.appendChild(dots);
+
+    // Energy bar
     const barTrack = document.createElement('div');
     barTrack.className = 'waiting-bar-container';
     const barBounce = document.createElement('div');
     barBounce.className = 'waiting-bar-bounce';
     barTrack.appendChild(barBounce);
 
-    container.appendChild(label);
+    container.appendChild(topRow);
     container.appendChild(barTrack);
     output.appendChild(container);
     output.scrollTop = output.scrollHeight;
