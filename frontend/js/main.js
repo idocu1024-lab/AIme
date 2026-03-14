@@ -105,12 +105,24 @@ async function checkEntityAndProceed() {
         });
         if (res.ok) {
             showTerminal();
+        } else if (res.status === 401) {
+            // Token invalid/expired — force re-login
+            logout();
         } else {
             showEntityCreation();
         }
     } catch {
         showEntityCreation();
     }
+}
+
+function logout() {
+    token = null;
+    localStorage.removeItem('aime_token');
+    document.getElementById('auth-screen').classList.remove('hidden');
+    document.getElementById('entity-screen').classList.add('hidden');
+    document.getElementById('terminal-screen').classList.add('hidden');
+    showLogin();
 }
 
 function showEntityCreation() {
@@ -148,6 +160,10 @@ async function createEntity() {
         });
         const data = await res.json();
         if (!res.ok) {
+            if (res.status === 401) {
+                logout();
+                return;
+            }
             errEl.textContent = extractError(data, '创建失败');
             return;
         }
