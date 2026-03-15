@@ -4,6 +4,10 @@ services:
     runtime: python
     buildCommand: pip install -e .
     startCommand: uvicorn aime.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: aime-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: "3.13.0"
@@ -18,8 +22,8 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: DATABASE_URL
-        value: "sqlite+aiosqlite:///./data/aime.db"
+        value: "sqlite+aiosqlite:////data/aime.db"
       - key: CHROMA_PERSIST_DIR
-        value: "./data/chroma"
+        value: "/data/chroma"
       - key: DEBUG
         value: "false"

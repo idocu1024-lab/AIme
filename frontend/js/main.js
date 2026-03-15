@@ -6,6 +6,9 @@ let commandHistory = [];
 let historyIndex = -1;
 let streamBuffer = '';
 let waitingForResponse = false;
+let reconnectAttempts = 0;
+let reconnectTimer = null;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 // Extract readable error message from API response
 function extractError(data, fallback) {
@@ -101,13 +104,22 @@ async function doRegister() {
 
 async function checkEntityAndProceed() {
     try {
+        // First verify the token is still valid (player exists)
+        const authRes = await fetch(`${API}/api/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!authRes.ok) {
+            // Token invalid or player deleted (Render restart wiped DB)
+            logout();
+            return;
+        }
+
         const res = await fetch(`${API}/api/entity/me`, {
             headers: { 'Authorization': `Bearer ${token}` },
         });
         if (res.ok) {
             showTerminal();
         } else if (res.status === 401) {
-            // Token invalid/expired — force re-login
             logout();
         } else {
             showEntityCreation();
@@ -195,30 +207,71 @@ function showTerminal() {
 }
 
 function connectWS() {
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws?token=${token}`;
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-        appendOutput('system', '连接已建立。');
+        reconnectAttempts = 0;
+        appendOutput('system', reconnectAttempts === 0 ? '连接已建立。' : '重新连接成功。');
     };
 
     ws.onmessage = (event) => {
         try {
             const msg = JSON.parse(event.data);
+            // Handle server ping — reply with pong
+            if (msg.type === 'ping') {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'pong' }));
+                }
+                return;
+            }
             handleMessage(msg);
         } catch {
             appendOutput('narrative', event.data);
         }
     };
 
-    ws.onclose = () => {
-        appendOutput('error', '连接已断开。刷新页面重新连接。');
+    ws.onclose = (event) => {
+        // Code 4002 = account deleted (Render restart wiped DB)
+        if (event.code === 4002) {
+            appendOutput('error', '账号数据已丢失（服务器重启），请重新注册。');
+            logout();
+            return;
+        }
+        // Code 4001 = auth failed
+        if (event.code === 4001) {
+            appendOutput('error', '认证失败，请重新登录。');
+            logout();
+            return;
+        }
+        scheduleReconnect();
     };
 
     ws.onerror = () => {
-        appendOutput('error', '连接错误。');
+        // onclose will fire after onerror, reconnect handled there
     };
+}
+
+function scheduleReconnect() {
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        appendOutput('error', '连接已断开，无法重连。请刷新页面。');
+        return;
+    }
+    // Exponential backoff: 1s, 2s, 4s, 8s... capped at 30s
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+    reconnectAttempts++;
+    appendOutput('system', `连接断开，${(delay / 1000).toFixed(0)}秒后重连... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+    reconnectTimer = setTimeout(() => {
+        if (token && !document.getElementById('terminal-screen').classList.contains('hidden')) {
+            connectWS();
+        }
+    }, delay);
 }
 
 function handleMessage(msg) {
@@ -260,13 +313,54 @@ function handleMessage(msg) {
     appendOutput(style, content);
 }
 
+function highlightEntityText(text) {
+    // Cultivation keywords to highlight
+    const keywords = [
+        '聚变度', '聚变', '魂念力', '修炼', '念体', '投喂', '论道', '切磋',
+        '飞升', '渡劫', '天劫', '凝念', '本心', '灵魂', '境界', '突破',
+        '觉醒', '顿悟', '悟道', '道心', '心法', '功法', '灵力', '元气',
+        '天道', '大道', '因果', '轮回', '造化', '气运', '机缘', '劫难',
+        '认知对齐', '认知深度', '知行一致', '自洽度',
+    ];
+    const kwPattern = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+
+    // Build combined regex: Chinese quotes「」, 【】brackets, **bold**, numbers/stats, keywords
+    const regex = new RegExp(
+        '(「[^」]+」)' +                     // Chinese quotes
+        '|(【[^】]+】)' +                    // Square brackets
+        '|(\\*\\*[^*]+\\*\\*)' +             // **bold** markdown
+        '|(\\b\\d+(?:\\.\\d+)?%?)' +         // numbers like 0.523, 42, 85%
+        '|(' + kwPattern + ')',              // cultivation keywords
+        'g'
+    );
+
+    return text.replace(regex, (match, quote, bracket, bold, number, keyword) => {
+        if (quote) return `<span class="hl-quote">${quote}</span>`;
+        if (bracket) return `<span class="hl-bracket">${bracket}</span>`;
+        if (bold) return `<span class="hl-emphasis">${bold.slice(2, -2)}</span>`;
+        if (number) return `<span class="hl-number">${number}</span>`;
+        if (keyword) return `<span class="hl-keyword">${keyword}</span>`;
+        return match;
+    });
+}
+
 function appendOutput(style, text) {
     const output = document.getElementById('terminal-output');
     const line = document.createElement('div');
     line.className = `msg-${style}`;
-    line.textContent = text;
+    if (style === 'entity') {
+        line.innerHTML = highlightEntityText(escapeHtml(text));
+    } else {
+        line.textContent = text;
+    }
     output.appendChild(line);
     output.scrollTop = output.scrollHeight;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 function updateStreamDisplay(text) {
@@ -278,7 +372,7 @@ function updateStreamDisplay(text) {
         streamEl.className = 'msg-entity';
         output.appendChild(streamEl);
     }
-    streamEl.textContent = text;
+    streamEl.innerHTML = highlightEntityText(escapeHtml(text));
     output.scrollTop = output.scrollHeight;
 }
 

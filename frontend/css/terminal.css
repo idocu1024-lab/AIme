@@ -191,6 +191,28 @@ body {
 }
 
 .msg-entity {
+    color: #d4d4d4;
+    line-height: 1.7;
+}
+
+/* Entity speech highlights */
+.msg-entity .hl-quote {
+    color: var(--cyan);
+}
+
+.msg-entity .hl-keyword {
+    color: var(--green);
+}
+
+.msg-entity .hl-number {
+    color: var(--gold);
+}
+
+.msg-entity .hl-emphasis {
+    color: #ff9f43;
+}
+
+.msg-entity .hl-bracket {
     color: var(--cyan);
 }
 

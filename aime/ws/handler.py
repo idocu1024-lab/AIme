@@ -1,5 +1,6 @@
 """WebSocket handler for the MUD terminal."""
 
+import asyncio
 import json
 import traceback
 
@@ -31,6 +32,9 @@ from aime.ws.renderer import (
     render_status,
     system_msg,
 )
+
+# Keepalive ping interval in seconds
+WS_PING_INTERVAL = 30
 
 WELCOME_ART = r"""
 ╔══════════════════════════════════════════════════╗
@@ -70,6 +74,19 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def _keepalive(websocket: WebSocket, player_id: str):
+    """Send periodic ping to keep connection alive."""
+    try:
+        while True:
+            await asyncio.sleep(WS_PING_INTERVAL)
+            try:
+                await websocket.send_text(json.dumps({"type": "ping"}))
+            except Exception:
+                break
+    except asyncio.CancelledError:
+        pass
+
+
 async def ws_endpoint(websocket: WebSocket):
     """Main WebSocket handler for MUD terminal."""
     # Auth via query param
@@ -79,8 +96,18 @@ async def ws_endpoint(websocket: WebSocket):
         await websocket.close(code=4001, reason="认证失败")
         return
 
+    # Verify player still exists in DB (handles Render ephemeral FS restarts)
+    async with async_session() as db:
+        result = await db.execute(select(Player).where(Player.id == player_id))
+        if not result.scalar_one_or_none():
+            await websocket.close(code=4002, reason="账号不存在，请重新注册")
+            return
+
     await manager.connect(player_id, websocket)
     await websocket.send_text(system_msg(WELCOME_ART))
+
+    # Start keepalive ping task
+    ping_task = asyncio.create_task(_keepalive(websocket, player_id))
 
     # Session state
     feed_buffer: list[str] = []
@@ -93,6 +120,9 @@ async def ws_endpoint(websocket: WebSocket):
 
             try:
                 data = json.loads(raw)
+                # Ignore pong responses from client
+                if data.get("type") == "pong":
+                    continue
                 text = data.get("cmd", data.get("text", "")).strip()
             except json.JSONDecodeError:
                 text = raw.strip()
@@ -161,6 +191,9 @@ async def ws_endpoint(websocket: WebSocket):
                 )
 
     except WebSocketDisconnect:
+        pass
+    finally:
+        ping_task.cancel()
         manager.disconnect(player_id)
 
 
