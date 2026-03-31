@@ -1,15 +1,21 @@
+import os
+
 from pydantic_settings import BaseSettings
+
+# Auto-detect Render environment (Render sets RENDER=true)
+_ON_RENDER = os.environ.get("RENDER") == "true"
+_DATA_DIR = "/data" if _ON_RENDER else "./data"
 
 
 class Settings(BaseSettings):
     app_name: str = "AI.me"
     debug: bool = False
 
-    # Database
-    database_url: str = "sqlite+aiosqlite:///./data/aime.db"
+    # Database — auto-uses /data on Render for persistent disk
+    database_url: str = f"sqlite+aiosqlite:///{_DATA_DIR}/aime.db"
 
-    # ChromaDB
-    chroma_persist_dir: str = "./data/chroma"
+    # ChromaDB — auto-uses /data on Render for persistent disk
+    chroma_persist_dir: str = f"{_DATA_DIR}/chroma"
 
     # LLM Provider: "openai" or "anthropic"
     llm_provider: str = "openai"

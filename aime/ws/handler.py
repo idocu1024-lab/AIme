@@ -33,8 +33,8 @@ from aime.ws.renderer import (
     system_msg,
 )
 
-# Keepalive ping interval in seconds
-WS_PING_INTERVAL = 30
+# Keepalive ping interval in seconds (Render proxy timeout ~60s)
+WS_PING_INTERVAL = 20
 
 WELCOME_ART = r"""
 ╔══════════════════════════════════════════════════╗
@@ -75,12 +75,15 @@ manager = ConnectionManager()
 
 
 async def _keepalive(websocket: WebSocket, player_id: str):
-    """Send periodic ping to keep connection alive."""
+    """Send periodic ping to keep connection alive through Render's proxy."""
     try:
         while True:
             await asyncio.sleep(WS_PING_INTERVAL)
             try:
+                # Send both application-level ping (for frontend) and
+                # WebSocket protocol-level ping (for Render's proxy)
                 await websocket.send_text(json.dumps({"type": "ping"}))
+                await websocket.send({"type": "websocket.ping"})
             except Exception:
                 break
     except asyncio.CancelledError:

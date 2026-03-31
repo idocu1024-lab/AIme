@@ -206,10 +206,18 @@ function showTerminal() {
     document.getElementById('terminal-input').focus();
 }
 
+let isReconnecting = false;
+
 function connectWS() {
     if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
+    }
+
+    // Close existing connection cleanly
+    if (ws) {
+        try { ws.close(); } catch {}
+        ws = null;
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -217,8 +225,10 @@ function connectWS() {
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+        const wasReconnecting = isReconnecting;
         reconnectAttempts = 0;
-        appendOutput('system', reconnectAttempts === 0 ? '连接已建立。' : '重新连接成功。');
+        isReconnecting = false;
+        appendOutput('system', wasReconnecting ? '重新连接成功。' : '连接已建立。');
     };
 
     ws.onmessage = (event) => {
@@ -263,8 +273,9 @@ function scheduleReconnect() {
         appendOutput('error', '连接已断开，无法重连。请刷新页面。');
         return;
     }
-    // Exponential backoff: 1s, 2s, 4s, 8s... capped at 30s
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+    isReconnecting = true;
+    // Exponential backoff: 1s, 2s, 4s, 8s... capped at 15s
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 15000);
     reconnectAttempts++;
     appendOutput('system', `连接断开，${(delay / 1000).toFixed(0)}秒后重连... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
     reconnectTimer = setTimeout(() => {
