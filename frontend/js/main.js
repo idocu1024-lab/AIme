@@ -401,14 +401,14 @@ function showWaitingBar() {
 
     const canvas = document.createElement('canvas');
     canvas.id = 'waiting-canvas';
-    canvas.height = 32;
+    canvas.height = 24;
     container.appendChild(canvas);
 
     output.appendChild(container);
     output.scrollTop = output.scrollHeight;
 
-    // Set canvas width after DOM insertion
-    canvas.width = canvas.offsetWidth || output.offsetWidth;
+    // Set canvas width after DOM insertion (match CSS constrained size)
+    canvas.width = Math.min(canvas.offsetWidth || 340, 340);
 
     animateWaiting(canvas);
 }
@@ -456,68 +456,28 @@ function animateWaiting(canvas) {
         ctx.fillStyle = '#00ff41';
         ctx.fillText('·'.repeat(dotCount), x + 4, 13);
 
-        // === Row 2: Energy bar (y=20~28) ===
-        const barY = 20;
-        const barH = 3;
+        // === Row 2: Gentle breathing energy bar (y=18~21) ===
+        const barY = 19;
+        const barH = 2;
 
-        // Track background
-        ctx.fillStyle = 'rgba(51,51,51,0.4)';
-        ctx.fillRect(0, barY, W, barH);
+        // Subtle track
+        ctx.fillStyle = 'rgba(51,51,51,0.25)';
+        ctx.fillRect(4, barY, W - 8, barH);
 
-        // Bouncing energy ball with spring physics
-        const period = 2.2;
-        const phase = (t % period) / period;
-        // Spring bounce: ease with overshoot
-        let bx;
-        if (phase < 0.45) {
-            // Forward with ease
-            const p = phase / 0.45;
-            bx = p * p * (3 - 2 * p); // smoothstep
-        } else if (phase < 0.55) {
-            // Slight bounce back
-            const p = (phase - 0.45) / 0.1;
-            bx = 1.0 - 0.08 * Math.sin(p * Math.PI);
-        } else if (phase < 0.9) {
-            // Return with spring
-            const p = (phase - 0.55) / 0.35;
-            bx = 1.0 - p * p * (3 - 2 * p);
-        } else {
-            // Bounce at start
-            const p = (phase - 0.9) / 0.1;
-            bx = 0.08 * Math.sin(p * Math.PI);
-        }
+        // Gentle breathing glow — no fast movement, just a soft pulse
+        const breathe = 0.4 + 0.3 * Math.sin(t * 1.2); // slow breath
+        const glowW = (W - 8) * (0.3 + 0.15 * Math.sin(t * 0.8)); // pulse width
+        const glowX = 4 + ((W - 8) - glowW) * (0.5 + 0.4 * Math.sin(t * 0.5)); // gentle drift
 
-        const ballX = bx * (W - 60);
-        const ballW = 60;
-
-        // Glow trail
-        const trailGrad = ctx.createLinearGradient(ballX - 20, 0, ballX + ballW + 20, 0);
-        trailGrad.addColorStop(0, 'transparent');
-        trailGrad.addColorStop(0.3, 'rgba(0,229,255,0.15)');
-        trailGrad.addColorStop(0.5, 'rgba(0,255,65,0.2)');
-        trailGrad.addColorStop(0.7, 'rgba(0,229,255,0.15)');
-        trailGrad.addColorStop(1, 'transparent');
-        ctx.fillStyle = trailGrad;
-        ctx.fillRect(ballX - 20, barY - 1, ballW + 40, barH + 2);
-
-        // Main energy ball
-        const grad = ctx.createLinearGradient(ballX, 0, ballX + ballW, 0);
+        // Soft glow
+        const grad = ctx.createLinearGradient(glowX, 0, glowX + glowW, 0);
         grad.addColorStop(0, 'transparent');
-        grad.addColorStop(0.2, '#00e5ff');
-        grad.addColorStop(0.5, '#00ff41');
-        grad.addColorStop(0.8, '#00e5ff');
+        grad.addColorStop(0.2, `rgba(0,229,255,${breathe * 0.4})`);
+        grad.addColorStop(0.5, `rgba(0,255,65,${breathe * 0.5})`);
+        grad.addColorStop(0.8, `rgba(0,229,255,${breathe * 0.4})`);
         grad.addColorStop(1, 'transparent');
         ctx.fillStyle = grad;
-        ctx.fillRect(ballX, barY, ballW, barH);
-
-        // Sparkle particles along the bar
-        for (let i = 0; i < 5; i++) {
-            const sx = ballX + Math.random() * ballW;
-            const sy = barY + Math.random() * barH;
-            const sa = 0.3 + Math.random() * 0.7;
-            ctx.fillStyle = `rgba(255,255,255,${sa})`;
-            ctx.fillRect(sx, sy, 1, 1);
-        }
+        ctx.fillRect(glowX, barY, glowW, barH);
 
         waitingAnimFrame = requestAnimationFrame(draw);
     }
