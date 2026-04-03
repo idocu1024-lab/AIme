@@ -1,4 +1,6 @@
 import json
+import logging
+import random
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,8 @@ from aime.models.feed import Feed
 from aime.models.social_event import SocialEvent
 from aime.prompts.daily_log import DAILY_LOG_PROMPT
 
+logger = logging.getLogger("aime.daily_cycle")
+
 
 class DailyCycle:
     def __init__(
@@ -25,6 +29,67 @@ class DailyCycle:
         self.llm = llm
         self.fusion_engine = FusionEngine(memory, llm)
         self.social_engine = SocialEngine(memory, llm)
+
+    # ──────────────────────────────────────────
+    # 社交轮次 — 可独立于每日结算、一天运行多次
+    # ──────────────────────────────────────────
+
+    async def run_social_round(self, db: AsyncSession) -> int:
+        """Run one round of social matching for ALL entities.
+
+        Pairs entities randomly and runs 论道/切磋 between each pair.
+        Returns the number of successful social events.
+        """
+        result = await db.execute(select(Entity))
+        entities = list(result.scalars().all())
+        if len(entities) < 2:
+            return 0
+
+        random.shuffle(entities)
+        events = 0
+
+        # Pair up entities (last one sits out if odd count)
+        pairs: list[tuple[Entity, Entity]] = []
+        used: set[str] = set()
+        for e in entities:
+            if e.id in used:
+                continue
+            # find_opponent picks a random other entity
+            opponent = await self.social_engine.find_opponent(e, db)
+            if opponent and opponent.id not in used:
+                pairs.append((e, opponent))
+                used.add(e.id)
+                used.add(opponent.id)
+
+        for entity_a, entity_b in pairs:
+            try:
+                # 70% 论道, 30% 切磋
+                if random.random() < 0.7:
+                    event = await self.social_engine.run_lun_dao(
+                        entity_a, entity_b, db
+                    )
+                    logger.info(
+                        f"论道：{entity_a.name} vs {entity_b.name} — {event.topic}"
+                    )
+                else:
+                    event = await self.social_engine.run_qie_cuo(
+                        entity_a, entity_b, db
+                    )
+                    logger.info(
+                        f"切磋：{entity_a.name} vs {entity_b.name} — {event.topic}"
+                    )
+                events += 1
+            except Exception as e:
+                logger.warning(
+                    f"社交失败：{entity_a.name} vs {entity_b.name}: {e}"
+                )
+                continue
+
+        return events
+
+    # ──────────────────────────────────────────
+    # 每日结算 — 每天一次
+    # ──────────────────────────────────────────
 
     async def run_for_entity(self, entity: Entity, db: AsyncSession) -> DailyLog:
         """Run the full daily cycle for one entity."""
@@ -39,17 +104,26 @@ class DailyCycle:
         )
         feeds_today = len(list(result.scalars().all()))
 
-        # 2. Run social matching (try to find an opponent)
-        social_summary = "无社交事件"
-        social_count = 0
-        opponent = await self.social_engine.find_opponent(entity, db)
-        if opponent:
-            try:
-                event = await self.social_engine.run_lun_dao(entity, opponent, db)
-                social_summary = f"与「{opponent.name}」进行了一次论道，话题：{event.topic}"
-                social_count = 1
-            except Exception:
-                social_summary = "尝试社交但未成功"
+        # 2. Summarize today's social events (already run by social rounds)
+        result = await db.execute(
+            select(SocialEvent).where(
+                SocialEvent.day == entity.cultivation_day,
+                (SocialEvent.entity_a_id == entity.id)
+                | (SocialEvent.entity_b_id == entity.id),
+            )
+        )
+        social_events = list(result.scalars().all())
+        social_count = len(social_events)
+
+        if social_events:
+            summaries = []
+            for ev in social_events[:3]:
+                summaries.append(
+                    f"参与了一次{ev.event_type}，话题：{ev.topic}"
+                )
+            social_summary = "；".join(summaries)
+        else:
+            social_summary = "无社交事件"
 
         # 3. Recalculate fusion
         fusion_result = await self.fusion_engine.calculate(entity, db)
@@ -76,7 +150,7 @@ class DailyCycle:
         )
         log_content = log_content.strip()
 
-        # 5. Save log
+        # 5. Save log & ingest as memory
         daily_log = DailyLog(
             entity_id=entity.id,
             day=entity.cultivation_day,
@@ -86,11 +160,27 @@ class DailyCycle:
             fusion_delta=json.dumps({"total_delta": fusion_delta}),
         )
         db.add(daily_log)
+        await db.flush()
+
+        # Store daily log as memory so entity remembers its cultivation journey
+        try:
+            self.memory.ingest(
+                entity_id=entity.id,
+                feed_id=daily_log.id,
+                text=f"【修炼日志·第{entity.cultivation_day}天】\n{log_content}",
+                source_label=f"日志·day{entity.cultivation_day}",
+            )
+        except Exception as e:
+            logger.warning(f"日志记忆写入失败({entity.name}): {e}")
 
         # 6. Increment cultivation day
         entity.cultivation_day += 1
 
         await db.commit()
+        logger.info(
+            f"结算完成：{entity.name}（第{entity.cultivation_day - 1}天 → "
+            f"融合度 {fusion_result.total:.4f}, Δ{delta_str}）"
+        )
         return daily_log
 
     async def run_all(self, db: AsyncSession) -> int:
@@ -102,6 +192,7 @@ class DailyCycle:
             try:
                 await self.run_for_entity(entity, db)
                 count += 1
-            except Exception:
+            except Exception as e:
+                logger.error(f"每日结算失败({entity.name}): {e}")
                 continue
         return count

@@ -75,6 +75,21 @@ async def _seed_sages():
         logger.info(f"自动创建了 {created} 个 NPC 念体。")
 
 
+async def _run_social_round():
+    """Scheduled job: run a round of social matching (论道/切磋)."""
+    from aime.core.daily_cycle import DailyCycle
+    from aime.core.llm import get_llm
+    from aime.core.memory_layer import MemoryLayer
+    from aime.deps import async_session, get_chroma
+
+    logger.info("开始社交轮次...")
+    memory = MemoryLayer(get_chroma())
+    cycle = DailyCycle(memory, get_llm())
+    async with async_session() as db:
+        events = await cycle.run_social_round(db)
+    logger.info(f"社交轮次完成，产生 {events} 场论道/切磋。")
+
+
 async def _run_daily_cycle():
     """Scheduled job: run daily cycle for all entities."""
     from aime.core.daily_cycle import DailyCycle
@@ -106,6 +121,8 @@ async def lifespan(app: FastAPI):
 
     # Start scheduler
     scheduler = AsyncIOScheduler()
+
+    # Daily settlement: once per day (fusion recalc + daily log + day increment)
     scheduler.add_job(
         _run_daily_cycle,
         "cron",
@@ -113,8 +130,29 @@ async def lifespan(app: FastAPI):
         id="daily_cycle",
         name="每日结算",
     )
+
+    # Social rounds: multiple times per day (论道/切磋 between all entities)
+    social_hours = [
+        int(h.strip())
+        for h in settings.social_matching_hours_utc.split(",")
+        if h.strip().isdigit()
+    ]
+    if social_hours:
+        scheduler.add_job(
+            _run_social_round,
+            "cron",
+            hour=",".join(str(h) for h in social_hours),
+            id="social_round",
+            name="社交轮次",
+        )
+
     scheduler.start()
-    logger.info(f"调度器已启动。每日结算时间：UTC {settings.daily_cycle_hour_utc}:00")
+    social_desc = ", ".join(f"UTC {h}:00" for h in social_hours)
+    logger.info(
+        f"调度器已启动。"
+        f"每日结算：UTC {settings.daily_cycle_hour_utc}:00 | "
+        f"社交轮次：{social_desc}"
+    )
 
     yield
 
