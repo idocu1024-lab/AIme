@@ -2,9 +2,22 @@ import os
 
 from pydantic_settings import BaseSettings
 
-# Auto-detect Render environment (Render sets RENDER=true)
-_ON_RENDER = os.environ.get("RENDER") == "true"
-_DATA_DIR = "/data" if _ON_RENDER else "./data"
+# Use /data if it exists and is writable (Render persistent disk), else ./data
+def _pick_data_dir() -> str:
+    if os.environ.get("RENDER") == "true":
+        try:
+            os.makedirs("/data", exist_ok=True)
+            # Test write permission
+            test = "/data/.write_test"
+            with open(test, "w") as f:
+                f.write("ok")
+            os.remove(test)
+            return "/data"
+        except (PermissionError, OSError):
+            pass
+    return "./data"
+
+_DATA_DIR = _pick_data_dir()
 
 
 class Settings(BaseSettings):

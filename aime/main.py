@@ -34,18 +34,9 @@ async def _run_daily_cycle():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure data directories exist BEFORE DB init
-    # Extract DB directory from URL (handles both relative ./data and absolute /data paths)
-    db_url = settings.database_url
-    if ":///" in db_url:
-        # sqlite+aiosqlite:////data/aime.db → /data
-        # sqlite+aiosqlite:///./data/aime.db → ./data
-        db_path = db_url.split(":///", 1)[1]
-        db_dir = os.path.dirname(db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-    else:
-        os.makedirs("data", exist_ok=True)
+    # Data dirs are already validated writable by config._pick_data_dir()
+    # Just ensure they exist (safe since config already confirmed writability)
+    os.makedirs(os.path.dirname(settings.database_url.split(":///", 1)[1]), exist_ok=True)
     os.makedirs(settings.chroma_persist_dir, exist_ok=True)
 
     # Create tables
