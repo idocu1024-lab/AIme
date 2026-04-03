@@ -17,6 +17,64 @@ from aime.ws.handler import ws_endpoint
 logger = logging.getLogger("aime.scheduler")
 
 
+async def _seed_sages():
+    """Auto-seed sage NPCs on startup if they don't exist yet."""
+    from sqlalchemy import select
+
+    from aime.core.memory_layer import MemoryLayer
+    from aime.core.npc_seeds import NPC_SEEDS, SAGE_SEEDS
+    from aime.deps import async_session, get_chroma
+    from aime.models.entity import Entity
+    from aime.models.feed import Feed
+
+    memory = MemoryLayer(get_chroma())
+    all_seeds = NPC_SEEDS + SAGE_SEEDS
+    created = 0
+
+    async with async_session() as db:
+        for npc in all_seeds:
+            result = await db.execute(
+                select(Entity).where(Entity.name == npc["name"])
+            )
+            if result.scalar_one_or_none():
+                continue
+
+            entity = Entity(
+                name=npc["name"],
+                core_belief=npc["core_belief"],
+                intent=npc["intent"],
+                is_npc=True,
+            )
+            db.add(entity)
+            await db.flush()
+
+            for i, feed_text in enumerate(npc.get("feeds", [])):
+                feed = Feed(
+                    entity_id=entity.id,
+                    raw_text=feed_text,
+                    source_label=f"NPC初始化-{i+1}",
+                )
+                db.add(feed)
+                await db.flush()
+                chunk_count = memory.ingest(
+                    entity_id=entity.id,
+                    feed_id=feed.id,
+                    text=feed_text,
+                    source_label=f"NPC初始化-{i+1}",
+                )
+                feed.chunk_count = chunk_count
+                feed.processed = True
+                entity.total_feeds += 1
+
+            created += 1
+            logger.info(f"创建圣人 NPC：{npc['name']}")
+
+        await db.commit()
+
+    if created:
+        logger.info(f"自动创建了 {created} 个 NPC 念体。")
+
+
 async def _run_daily_cycle():
     """Scheduled job: run daily cycle for all entities."""
     from aime.core.daily_cycle import DailyCycle
@@ -42,6 +100,9 @@ async def lifespan(app: FastAPI):
     # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Auto-seed NPC sages
+    await _seed_sages()
 
     # Start scheduler
     scheduler = AsyncIOScheduler()

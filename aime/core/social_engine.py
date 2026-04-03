@@ -1,4 +1,5 @@
 import json
+import logging
 import random
 
 from sqlalchemy import select
@@ -11,6 +12,8 @@ from aime.models.entity import Entity
 from aime.models.social_event import SocialEvent
 from aime.prompts.lun_dao import LUN_DAO_PROMPT
 from aime.prompts.qie_cuo import QIE_CUO_PROMPT
+
+logger = logging.getLogger("aime.social")
 
 
 class SocialEngine:
@@ -72,6 +75,13 @@ class SocialEngine:
         # Apply fusion impacts
         self._apply_impact(entity_a, impact_a)
         self._apply_impact(entity_b, impact_b)
+
+        await db.flush()
+
+        # Ingest social dialogue as memory for both entities (learning)
+        self._ingest_social_memory(
+            entity_a, entity_b, event, parsed, "论道"
+        )
 
         await db.commit()
         return event
@@ -150,6 +160,13 @@ class SocialEngine:
             entity_b, impact_winner if winner == entity_b else impact_loser
         )
 
+        await db.flush()
+
+        # Ingest social dialogue as memory for both entities (learning)
+        self._ingest_social_memory(
+            entity_a, entity_b, event, parsed, "切磋"
+        )
+
         await db.commit()
         return event
 
@@ -166,6 +183,61 @@ class SocialEngine:
         if not candidates:
             return None
         return random.choice(candidates)
+
+    def _ingest_social_memory(
+        self,
+        entity_a: Entity,
+        entity_b: Entity,
+        event: SocialEvent,
+        parsed: dict,
+        event_label: str,
+    ):
+        """Store social event as memory for both entities so they learn."""
+        # Build a concise memory text from the parsed dialogue
+        topic = parsed.get("topic", "未知")
+        dialogue = parsed.get("dialogue", [])
+
+        # Summarize the dialogue into a readable memory
+        lines = [f"【{event_label}记忆】与「{{opponent}}」关于「{topic}」的{event_label}"]
+        for turn in dialogue[:6]:  # Cap at 6 turns to keep memory concise
+            speaker = turn.get("speaker", turn.get("name", "?"))
+            content = turn.get("content", turn.get("text", ""))
+            if content:
+                lines.append(f"{speaker}：{content[:200]}")
+
+        # Add insights/outcome if available
+        insights = parsed.get("insights", parsed.get("analysis", ""))
+        if isinstance(insights, dict):
+            for k, v in insights.items():
+                lines.append(f"感悟·{k}：{v}")
+        elif isinstance(insights, str) and insights:
+            lines.append(f"感悟：{insights[:300]}")
+
+        memory_text_template = "\n".join(lines)
+
+        # Ingest for entity A
+        try:
+            text_a = memory_text_template.replace("{opponent}", entity_b.name)
+            self.memory.ingest(
+                entity_id=entity_a.id,
+                feed_id=event.id,
+                text=text_a,
+                source_label=f"{event_label}·{entity_b.name}·day{event.day}",
+            )
+        except Exception as e:
+            logger.warning(f"社交记忆写入失败(A): {e}")
+
+        # Ingest for entity B
+        try:
+            text_b = memory_text_template.replace("{opponent}", entity_a.name)
+            self.memory.ingest(
+                entity_id=entity_b.id,
+                feed_id=event.id,
+                text=text_b,
+                source_label=f"{event_label}·{entity_a.name}·day{event.day}",
+            )
+        except Exception as e:
+            logger.warning(f"社交记忆写入失败(B): {e}")
 
     def _apply_impact(self, entity: Entity, impact: dict):
         """Apply fusion impact deltas to an entity."""

@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from aime.config import settings
 from aime.core.memory_layer import MemoryLayer
-from aime.core.npc_seeds import NPC_SEEDS
+from aime.core.npc_seeds import NPC_SEEDS, SAGE_SEEDS
 from aime.deps import async_session, engine, get_chroma
 from aime.models import Base
 from aime.models.entity import Entity
@@ -23,8 +23,10 @@ async def seed():
 
     memory = MemoryLayer(get_chroma())
 
+    all_seeds = NPC_SEEDS + SAGE_SEEDS
+
     async with async_session() as db:
-        for npc in NPC_SEEDS:
+        for npc in all_seeds:
             # Check if already exists
             from sqlalchemy import select
             result = await db.execute(
