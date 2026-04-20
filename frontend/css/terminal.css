@@ -216,6 +216,34 @@ body {
     color: var(--cyan);
 }
 
+/* ===== Speech lines (social event dialogue) ===== */
+.msg-speech {
+    color: #d4d4d4;
+    line-height: 1.7;
+    margin: 2px 0;
+    padding-left: 2px;
+}
+
+.msg-speech .speech-speaker {
+    font-weight: bold;
+    /* color set inline from palette */
+}
+
+.msg-speech .speech-sep {
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+.msg-speech .speech-body {
+    color: #d4d4d4;
+}
+
+.msg-speech .speech-body .hl-quote { color: var(--cyan); }
+.msg-speech .speech-body .hl-keyword { color: var(--green); }
+.msg-speech .speech-body .hl-number { color: var(--gold); }
+.msg-speech .speech-body .hl-emphasis { color: #ff9f43; }
+.msg-speech .speech-body .hl-bracket { color: var(--cyan); }
+
 .msg-error {
     color: var(--red);
 }

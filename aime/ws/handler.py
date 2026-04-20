@@ -30,6 +30,7 @@ from aime.ws.renderer import (
     render_help,
     render_leaderboard,
     render_status,
+    speech,
     system_msg,
 )
 
@@ -454,9 +455,53 @@ async def _handle_social(player_id: str, ws: WebSocket, event_type: str):
                 highlight(f"━━━ {event_name}记录 · 与「{opponent.name}」 ━━━")
             )
             await ws.send_text(narrative(f"话题：{event.topic}"))
-            await ws.send_text(narrative(event.transcript))
-            if event.outcome:
-                await ws.send_text(highlight(f"\n结果：{event.outcome}"))
+            await ws.send_text(narrative(""))  # blank line
+
+            # Parse transcript JSON and render each turn with speaker color
+            try:
+                parsed = json.loads(event.transcript)
+            except json.JSONDecodeError:
+                parsed = None
+
+            if parsed and isinstance(parsed.get("dialogue"), list):
+                for turn in parsed["dialogue"]:
+                    spk = turn.get("speaker") or turn.get("name") or "?"
+                    txt = turn.get("content") or turn.get("text") or ""
+                    if txt:
+                        await ws.send_text(speech(spk, txt))
+
+                # Render outcome insights/analysis
+                await ws.send_text(narrative(""))
+                if event_type == "lun_dao":
+                    insights = parsed.get("insights", {})
+                    if isinstance(insights, dict) and insights:
+                        await ws.send_text(highlight("【感悟】"))
+                        for who, what in insights.items():
+                            await ws.send_text(speech(who, str(what)))
+                else:
+                    winner = parsed.get("winner", "")
+                    analysis = parsed.get("analysis", "")
+                    if winner:
+                        await ws.send_text(
+                            highlight(f"【胜出】{winner}")
+                        )
+                    if analysis:
+                        await ws.send_text(narrative(analysis))
+                    wi = parsed.get("winner_insight")
+                    li = parsed.get("loser_insight")
+                    if wi or li:
+                        await ws.send_text(narrative(""))
+                        await ws.send_text(highlight("【双方所获】"))
+                        if wi:
+                            await ws.send_text(narrative(f"胜方：{wi}"))
+                        if li:
+                            await ws.send_text(narrative(f"负方：{li}"))
+            else:
+                # Fallback: transcript failed to parse, show raw
+                await ws.send_text(narrative(event.transcript))
+                if event.outcome:
+                    await ws.send_text(highlight(f"\n结果：{event.outcome}"))
+
             await ws.send_text(divider())
         except Exception as e:
             await ws.send_text(error_msg(f"{event_name}失败：{e}"))

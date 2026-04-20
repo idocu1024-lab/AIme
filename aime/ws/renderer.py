@@ -24,6 +24,15 @@ def entity_speech(content: str, streaming: bool = False, done: bool = False) -> 
     return render("entity_speech", content, streaming=streaming, done=done)
 
 
+def speech(speaker: str, content: str) -> str:
+    """Dialogue turn in a social event — speaker + content.
+
+    Frontend hashes the speaker name to pick a stable color so each
+    entity has a distinct voice.
+    """
+    return render("speech", content, speaker=speaker)
+
+
 def error_msg(content: str) -> str:
     return render("error", content)
 

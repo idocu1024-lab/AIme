@@ -312,6 +312,12 @@ function handleMessage(msg) {
     // Non-streaming message — hide waiting bar
     hideWaitingBar();
 
+    // Dialogue turn in a social event — colored by speaker
+    if (type === 'speech') {
+        appendSpeech(msg.speaker || '?', content || '');
+        return;
+    }
+
     const styleMap = {
         'system': 'system',
         'narrative': 'narrative',
@@ -322,6 +328,51 @@ function handleMessage(msg) {
     };
     const style = styleMap[type] || 'narrative';
     appendOutput(style, content);
+}
+
+// Palette of 8 distinguishable colors for speakers in social events
+const SPEAKER_COLORS = [
+    '#00e5ff', // cyan
+    '#ffb74d', // amber
+    '#b388ff', // light purple
+    '#ff8a80', // coral
+    '#69f0ae', // mint
+    '#ffd54f', // gold
+    '#81d4fa', // sky blue
+    '#f48fb1', // pink
+];
+
+function colorForSpeaker(name) {
+    // Simple stable hash → palette index
+    let h = 0;
+    for (let i = 0; i < name.length; i++) {
+        h = ((h << 5) - h) + name.charCodeAt(i);
+        h |= 0;
+    }
+    return SPEAKER_COLORS[Math.abs(h) % SPEAKER_COLORS.length];
+}
+
+function appendSpeech(speaker, text) {
+    const output = document.getElementById('terminal-output');
+    const line = document.createElement('div');
+    line.className = 'msg-speech';
+    const color = colorForSpeaker(speaker);
+    const speakerEl = document.createElement('span');
+    speakerEl.className = 'speech-speaker';
+    speakerEl.style.color = color;
+    speakerEl.textContent = speaker;
+    const sep = document.createElement('span');
+    sep.className = 'speech-sep';
+    sep.textContent = ' ▸ ';
+    sep.style.color = color;
+    const bodyEl = document.createElement('span');
+    bodyEl.className = 'speech-body';
+    bodyEl.innerHTML = highlightEntityText(escapeHtml(text));
+    line.appendChild(speakerEl);
+    line.appendChild(sep);
+    line.appendChild(bodyEl);
+    output.appendChild(line);
+    output.scrollTop = output.scrollHeight;
 }
 
 function highlightEntityText(text) {
