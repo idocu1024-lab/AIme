@@ -464,11 +464,32 @@ async def _handle_social(player_id: str, ws: WebSocket, event_type: str):
                 parsed = None
 
             if parsed and isinstance(parsed.get("dialogue"), list):
-                for turn in parsed["dialogue"]:
-                    spk = turn.get("speaker") or turn.get("name") or "?"
-                    txt = turn.get("content") or turn.get("text") or ""
+                # Default speakers in case LLM forgot to label some turns
+                default_speakers = [entity.name, opponent.name]
+                for i, turn in enumerate(parsed["dialogue"]):
+                    if isinstance(turn, dict):
+                        spk = (
+                            turn.get("speaker")
+                            or turn.get("name")
+                            or turn.get("role")
+                            or turn.get("from")
+                            or default_speakers[i % 2]
+                        )
+                        txt = (
+                            turn.get("content")
+                            or turn.get("text")
+                            or turn.get("message")
+                            or turn.get("say")
+                            or ""
+                        )
+                    elif isinstance(turn, str):
+                        # LLM returned plain strings — alternate speakers A/B
+                        spk = default_speakers[i % 2]
+                        txt = turn
+                    else:
+                        continue
                     if txt:
-                        await ws.send_text(speech(spk, txt))
+                        await ws.send_text(speech(str(spk), str(txt)))
 
                 # Render outcome insights/analysis
                 await ws.send_text(narrative(""))

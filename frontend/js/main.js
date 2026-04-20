@@ -550,30 +550,69 @@ function hideWaitingBar() {
 document.addEventListener('DOMContentLoaded', () => {
     const input = document.getElementById('terminal-input');
 
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            const text = input.value.trim();
-            if (text) {
-                // Show command echo
-                appendOutput('narrative', `⟩ ${text}`);
-                // Send to server
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ cmd: text }));
-                    showWaitingBar();
-                }
-                // Update history
-                commandHistory.unshift(text);
-                if (commandHistory.length > 50) commandHistory.pop();
-                historyIndex = -1;
-            }
+    // Track IME composition state (for Chinese/Japanese/Korean input methods)
+    // When IME is composing, the Enter key should commit IME candidates,
+    // NOT submit the command to the server.
+    let imeComposing = false;
+    input.addEventListener('compositionstart', () => { imeComposing = true; });
+    input.addEventListener('compositionend', () => { imeComposing = false; });
+
+    function submitCommand() {
+        // Collapse any runs of whitespace to a single space, then trim.
+        // Commands like "/t hello world" still work; IME artifacts like
+        // "/ l d" or "/h e l p" that may slip past composition get normalized.
+        const raw = input.value;
+        const text = raw.replace(/\s+/g, ' ').trim();
+        if (!text) {
             input.value = '';
+            return;
+        }
+        // If the first token contains spaces that look like a broken command
+        // (e.g., "/ l d" → "/ld"), strip them for the leading slash-command
+        let cleaned = text;
+        const leadingCmd = text.match(/^(\/[a-zA-Z]\s*(?:[a-zA-Z]\s*)*)(.*)$/);
+        if (leadingCmd) {
+            const cmdPart = leadingCmd[1].replace(/\s+/g, '');
+            const rest = leadingCmd[2];
+            cleaned = cmdPart + rest;
+        }
+        appendOutput('narrative', `⟩ ${cleaned}`);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ cmd: cleaned }));
+            showWaitingBar();
+        }
+        commandHistory.unshift(cleaned);
+        if (commandHistory.length > 50) commandHistory.pop();
+        historyIndex = -1;
+        input.value = '';
+    }
+
+    input.addEventListener('keydown', (e) => {
+        // Ctrl/Cmd + Enter always sends (force-send, bypasses IME check)
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            submitCommand();
+            return;
+        }
+
+        if (e.key === 'Enter') {
+            // Skip if IME is composing — let the browser pass Enter to the IME
+            // to commit the candidate. `isComposing` is the modern spec;
+            // keyCode === 229 is a fallback for older browsers.
+            if (imeComposing || e.isComposing || e.keyCode === 229) {
+                return;
+            }
+            e.preventDefault();
+            submitCommand();
         } else if (e.key === 'ArrowUp') {
+            if (imeComposing || e.isComposing) return;
             e.preventDefault();
             if (historyIndex < commandHistory.length - 1) {
                 historyIndex++;
                 input.value = commandHistory[historyIndex];
             }
         } else if (e.key === 'ArrowDown') {
+            if (imeComposing || e.isComposing) return;
             e.preventDefault();
             if (historyIndex > 0) {
                 historyIndex--;
