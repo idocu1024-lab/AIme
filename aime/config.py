@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     fusion_quant_weight: float = 0.4
     fusion_semantic_weight: float = 0.6
 
+    # Email (daily cultivation report)
+    smtp_host: str = ""           # e.g. smtp.gmail.com
+    smtp_port: int = 587          # 587 (STARTTLS) or 465 (SSL)
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_from: str = ""           # "AI.me <noreply@example.com>" — defaults to smtp_user
+    smtp_use_ssl: bool = False    # True for port 465
+    daily_report_enabled: bool = True
+
     # Admin
     admin_key: str = "aime-admin-2024"
 

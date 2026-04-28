@@ -91,8 +91,9 @@ async def _run_social_round():
 
 
 async def _run_daily_cycle():
-    """Scheduled job: run daily cycle for all entities."""
+    """Scheduled job: run daily cycle for all entities, then send reports."""
     from aime.core.daily_cycle import DailyCycle
+    from aime.core.daily_report import send_daily_reports
     from aime.core.llm import get_llm
     from aime.core.memory_layer import MemoryLayer
     from aime.deps import async_session, get_chroma
@@ -103,6 +104,39 @@ async def _run_daily_cycle():
     async with async_session() as db:
         count = await cycle.run_all(db)
     logger.info(f"每日结算完成，处理 {count} 个念体。")
+
+    # Send daily report emails after cycle finishes
+    try:
+        await send_daily_reports()
+    except Exception as e:
+        logger.error(f"每日邮件发送失败: {e}")
+
+
+async def _migrate_player_email_column():
+    """Add `email` and `daily_report_enabled` columns to players if missing.
+
+    SQLAlchemy `create_all` doesn't ALTER existing tables. For SQLite, we
+    detect missing columns and add them via raw SQL.
+    """
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        # Check current columns
+        result = await conn.exec_driver_sql("PRAGMA table_info(players)")
+        existing_cols = {row[1] for row in result.fetchall()}
+
+        if "email" not in existing_cols:
+            await conn.exec_driver_sql(
+                "ALTER TABLE players ADD COLUMN email VARCHAR(128)"
+            )
+            logger.info("已为 players 表添加 email 列")
+
+        if "daily_report_enabled" not in existing_cols:
+            await conn.exec_driver_sql(
+                "ALTER TABLE players ADD COLUMN daily_report_enabled "
+                "BOOLEAN DEFAULT 1"
+            )
+            logger.info("已为 players 表添加 daily_report_enabled 列")
 
 
 @asynccontextmanager
@@ -115,6 +149,9 @@ async def lifespan(app: FastAPI):
     # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Migrate schema for new columns added after initial deploy
+    await _migrate_player_email_column()
 
     # Auto-seed NPC sages
     await _seed_sages()

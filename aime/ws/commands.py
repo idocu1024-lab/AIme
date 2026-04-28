@@ -9,8 +9,13 @@ COMMAND_MAP = {
     "查看日志": "view_log",
     "查看状态": "view_status",
     "查看天榜": "view_leaderboard",
+    "查看进度": "view_progress",
+    "进度": "view_progress",
+    "今日": "view_progress",
     "论道": "lun_dao",
     "切磋": "qie_cuo",
+    "设置邮箱": "set_email",
+    "邮箱": "set_email",
     "帮助": "help",
     # Slash shortcuts
     "/f": "feed",
@@ -18,9 +23,11 @@ COMMAND_MAP = {
     "/s": "view_status",
     "/l": "view_log",
     "/r": "view_leaderboard",
+    "/p": "view_progress",
     "/d": "set_direction",
     "/ld": "lun_dao",
     "/qc": "qie_cuo",
+    "/email": "set_email",
     "/h": "help",
     # English aliases
     "feed": "feed",
@@ -30,9 +37,12 @@ COMMAND_MAP = {
     "log": "view_log",
     "rank": "view_leaderboard",
     "leaderboard": "view_leaderboard",
+    "progress": "view_progress",
+    "today": "view_progress",
     "direction": "set_direction",
     "debate": "lun_dao",
     "spar": "qie_cuo",
+    "email": "set_email",
     "help": "help",
 }
 

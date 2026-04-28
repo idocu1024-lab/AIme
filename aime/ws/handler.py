@@ -187,6 +187,10 @@ async def ws_endpoint(websocket: WebSocket):
                 await _handle_social(player_id, websocket, "lun_dao")
             elif handler == "qie_cuo":
                 await _handle_social(player_id, websocket, "qie_cuo")
+            elif handler == "view_progress":
+                await _handle_progress(player_id, websocket)
+            elif handler == "set_email":
+                await _handle_set_email(player_id, websocket, args)
             elif handler == "help":
                 await websocket.send_text(narrative(render_help()))
             elif handler == "unknown":
@@ -422,6 +426,180 @@ async def _handle_set_direction(player_id: str, ws: WebSocket, direction: str):
         entity.current_direction = direction
         await db.commit()
         await ws.send_text(highlight(f"修炼方向已设定为：{direction}"))
+
+
+async def _handle_set_email(player_id: str, ws: WebSocket, email: str):
+    """Set player's email for daily cultivation report."""
+    import re
+
+    async with async_session() as db:
+        result = await db.execute(select(Player).where(Player.id == player_id))
+        player = result.scalar_one_or_none()
+        if not player:
+            await ws.send_text(error_msg("找不到玩家。"))
+            return
+
+        email = email.strip()
+
+        # Allow disabling: "/email off" or "/email 关闭"
+        if email.lower() in ("off", "关闭", "无", "none", ""):
+            if not email:
+                # Show current status
+                current = player.email or "（未设置）"
+                state = "开启" if player.daily_report_enabled else "关闭"
+                await ws.send_text(
+                    narrative(
+                        f"━━━ 邮件设置 ━━━\n\n"
+                        f"  当前邮箱：{current}\n"
+                        f"  日报状态：{state}\n\n"
+                        f"  设置：/email <你的邮箱>\n"
+                        f"  关闭：/email off"
+                    )
+                )
+                return
+            player.daily_report_enabled = False
+            await db.commit()
+            await ws.send_text(highlight("已关闭每日邮件报告。"))
+            return
+
+        # Validate email format
+        if not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email):
+            await ws.send_text(error_msg(f"邮箱格式不正确：{email}"))
+            return
+
+        player.email = email
+        player.daily_report_enabled = True
+        await db.commit()
+        await ws.send_text(
+            highlight(
+                f"邮箱已设置为：{email}\n"
+                f"每日 UTC {settings.daily_cycle_hour_utc}:00（北京"
+                f"{(settings.daily_cycle_hour_utc + 8) % 24}:00）"
+                f"将自动收到修炼日报。"
+            )
+        )
+
+
+async def _handle_progress(player_id: str, ws: WebSocket):
+    """Show today's auto-cultivation summary: latest log + today's social events."""
+    from sqlalchemy import or_
+    from aime.models.social_event import SocialEvent
+
+    async with async_session() as db:
+        entity = await _get_entity(player_id, db)
+        if not entity:
+            await ws.send_text(error_msg("你还没有念体。"))
+            return
+
+        await ws.send_text(divider())
+        await ws.send_text(
+            highlight(f"━━━ {entity.name} · 修炼进度 ━━━")
+        )
+
+        # Latest daily log
+        log_result = await db.execute(
+            select(DailyLog)
+            .where(DailyLog.entity_id == entity.id)
+            .order_by(DailyLog.day.desc())
+            .limit(1)
+        )
+        latest_log = log_result.scalar_one_or_none()
+
+        if latest_log:
+            delta = 0.0
+            if latest_log.fusion_delta:
+                try:
+                    delta = json.loads(latest_log.fusion_delta).get(
+                        "total_delta", 0.0
+                    )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            delta_str = f"{delta:+.4f}" if delta else "0"
+
+            await ws.send_text(
+                narrative(
+                    f"\n第 {latest_log.day} 天 · 聚变度 "
+                    f"{entity.fusion_total:.4f} (Δ{delta_str})\n"
+                )
+            )
+            await ws.send_text(highlight("【最近修炼日志】"))
+            await ws.send_text(narrative(latest_log.content))
+        else:
+            await ws.send_text(
+                narrative("\n暂无修炼日志。每日 UTC 0:00（北京 8:00）自动生成。\n")
+            )
+
+        # Today's & yesterday's social events
+        target_day = (
+            latest_log.day if latest_log else max(1, entity.cultivation_day - 1)
+        )
+        social_result = await db.execute(
+            select(SocialEvent)
+            .where(
+                SocialEvent.day >= max(1, target_day - 1),
+                or_(
+                    SocialEvent.entity_a_id == entity.id,
+                    SocialEvent.entity_b_id == entity.id,
+                ),
+            )
+            .order_by(SocialEvent.created_at.desc())
+            .limit(8)
+        )
+        events = list(social_result.scalars().all())
+
+        await ws.send_text(narrative(""))
+        await ws.send_text(highlight("【近期自动社交】"))
+
+        if not events:
+            await ws.send_text(narrative("尚无自动社交事件。"))
+        else:
+            for evt in events:
+                opp_id = (
+                    evt.entity_b_id
+                    if evt.entity_a_id == entity.id
+                    else evt.entity_a_id
+                )
+                opp_result = await db.execute(
+                    select(Entity.name).where(Entity.id == opp_id)
+                )
+                opp_name = opp_result.scalar_one_or_none() or "未知"
+                label = "论道" if evt.event_type == "lun_dao" else "切磋"
+
+                verdict = ""
+                if evt.event_type == "qie_cuo" and evt.outcome:
+                    try:
+                        o = json.loads(evt.outcome)
+                        if o.get("winner") == entity.name:
+                            verdict = "（胜）"
+                        elif o.get("winner"):
+                            verdict = "（负）"
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                await ws.send_text(
+                    narrative(
+                        f"  · 第{evt.day}天 {label}{verdict} 与 "
+                        f"{opp_name} — {evt.topic or '未知话题'}"
+                    )
+                )
+
+        # Email status
+        result = await db.execute(select(Player).where(Player.id == player_id))
+        player = result.scalar_one_or_none()
+        if player:
+            await ws.send_text(narrative(""))
+            if player.email and player.daily_report_enabled:
+                await ws.send_text(
+                    system_msg(f"📧 每日报告将发送至 {player.email}")
+                )
+            else:
+                await ws.send_text(
+                    system_msg(
+                        "📧 邮件报告未开启。使用 /email <你的邮箱> 启用每日修炼日报。"
+                    )
+                )
+
+        await ws.send_text(divider())
 
 
 async def _handle_social(player_id: str, ws: WebSocket, event_type: str):

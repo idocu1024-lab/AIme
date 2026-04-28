@@ -13,6 +13,10 @@ class Player(Base, TimestampMixin):
     display_name: Mapped[str] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(default=True)
 
+    # Optional contact email for daily cultivation report
+    email: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    daily_report_enabled: Mapped[bool] = mapped_column(default=True)
+
     entity: Mapped["Entity | None"] = relationship(  # noqa: F821
         back_populates="player", uselist=False
     )
