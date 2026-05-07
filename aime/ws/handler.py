@@ -108,7 +108,12 @@ async def ws_endpoint(websocket: WebSocket):
             return
 
     await manager.connect(player_id, websocket)
-    await websocket.send_text(system_msg(WELCOME_ART))
+
+    # On reconnect, skip the noisy welcome banner — the client appended
+    # ?reconnect=1 to indicate this is not a fresh login.
+    is_reconnect = websocket.query_params.get("reconnect") == "1"
+    if not is_reconnect:
+        await websocket.send_text(system_msg(WELCOME_ART))
 
     # Start keepalive ping task
     ping_task = asyncio.create_task(_keepalive(websocket, player_id))

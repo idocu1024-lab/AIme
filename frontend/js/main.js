@@ -207,6 +207,7 @@ function showTerminal() {
 }
 
 let isReconnecting = false;
+let suppressDisconnectMessage = false;  // Avoid stacking "连接断开..." lines
 
 function connectWS() {
     if (reconnectTimer) {
@@ -221,14 +222,21 @@ function connectWS() {
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws?token=${token}`;
+    // Tell the server when this is a reconnect so it can skip the banner
+    const reconnectFlag = isReconnecting ? '&reconnect=1' : '';
+    const wsUrl = `${protocol}//${window.location.host}/ws?token=${token}${reconnectFlag}`;
     ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
         const wasReconnecting = isReconnecting;
         reconnectAttempts = 0;
         isReconnecting = false;
-        appendOutput('system', wasReconnecting ? '重新连接成功。' : '连接已建立。');
+        suppressDisconnectMessage = false;
+        if (wasReconnecting) {
+            appendOutput('system', '已重新连接。');
+        } else {
+            appendOutput('system', '连接已建立。');
+        }
     };
 
     ws.onmessage = (event) => {
@@ -277,7 +285,14 @@ function scheduleReconnect() {
     // Exponential backoff: 1s, 2s, 4s, 8s... capped at 15s
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 15000);
     reconnectAttempts++;
-    appendOutput('system', `连接断开，${(delay / 1000).toFixed(0)}秒后重连... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+
+    // Only show the disconnect notice on the FIRST attempt of a streak.
+    // Subsequent retries silently keep trying so the terminal isn't flooded.
+    if (!suppressDisconnectMessage) {
+        appendOutput('system', '连接断开，正在自动重连...');
+        suppressDisconnectMessage = true;
+    }
+
     reconnectTimer = setTimeout(() => {
         if (token && !document.getElementById('terminal-screen').classList.contains('hidden')) {
             connectWS();
@@ -356,20 +371,34 @@ function appendSpeech(speaker, text) {
     const output = document.getElementById('terminal-output');
     const line = document.createElement('div');
     line.className = 'msg-speech';
+
+    // Mark consecutive turns by the same speaker so CSS can tighten spacing
+    const prev = output.lastElementChild;
+    if (prev && prev.classList.contains('msg-speech') &&
+        prev.dataset.speaker === speaker) {
+        line.classList.add('same-speaker');
+    }
+    line.dataset.speaker = speaker;
+
     const color = colorForSpeaker(speaker);
+
+    // Format: 「Speaker：」content   (novel-style, bold colored name + Chinese colon)
     const speakerEl = document.createElement('span');
     speakerEl.className = 'speech-speaker';
     speakerEl.style.color = color;
     speakerEl.textContent = speaker;
-    const sep = document.createElement('span');
-    sep.className = 'speech-sep';
-    sep.textContent = ' ▸ ';
-    sep.style.color = color;
+
+    const colonEl = document.createElement('span');
+    colonEl.className = 'speech-colon';
+    colonEl.textContent = '：';
+    colonEl.style.color = color;
+
     const bodyEl = document.createElement('span');
     bodyEl.className = 'speech-body';
     bodyEl.innerHTML = highlightEntityText(escapeHtml(text));
+
     line.appendChild(speakerEl);
-    line.appendChild(sep);
+    line.appendChild(colonEl);
     line.appendChild(bodyEl);
     output.appendChild(line);
     output.scrollTop = output.scrollHeight;
